@@ -1,0 +1,553 @@
+openapi: 3.0.3
+info:
+  title: Smart PDAM API
+  description: REST API for Smart PDAM platform. Includes endpoints for authentication, profile management, meter readings, invoices, payments, and admin actions.
+  version: 1.0.0
+servers:
+  - url: http://localhost:8000/api/v1
+    description: Local Development Server
+
+paths:
+  /auth/register:
+    post:
+      summary: Register a new customer
+      tags:
+        - Authentication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: Registration successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '422':
+          description: Validation Error
+          
+  /auth/login:
+    post:
+      summary: Login to the application
+      tags:
+        - Authentication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          description: Unauthorized
+        '422':
+          description: Validation Error
+
+  /auth/logout:
+    post:
+      summary: Logout the current user
+      tags:
+        - Authentication
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Logged out successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Logged out successfully
+        '401':
+          description: Unauthorized
+
+  /profile:
+    get:
+      summary: Get the authenticated user's profile
+      tags:
+        - Profile
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: User profile retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/User'
+        '401':
+          description: Unauthorized
+
+  /meter-readings:
+    post:
+      summary: Submit a new meter reading
+      description: Uploads a new meter reading along with a photo. Uses multipart/form-data.
+      tags:
+        - Meter Readings
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - water_meter_id
+                - reading_value
+                - photo_path
+                - reading_date
+              properties:
+                water_meter_id:
+                  type: integer
+                  example: 1
+                reading_value:
+                  type: integer
+                  example: 1205
+                photo_path:
+                  type: string
+                  format: binary
+                reading_date:
+                  type: string
+                  format: date
+                  example: "2024-05-15"
+      responses:
+        '201':
+          description: Meter reading submitted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Meter reading submitted successfully.
+                  data:
+                    $ref: '#/components/schemas/MeterReading'
+        '401':
+          description: Unauthorized
+        '422':
+          description: Validation Error
+
+  /invoices:
+    get:
+      summary: Get all invoices for the authenticated user
+      tags:
+        - Invoices
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: List of invoices
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Invoice'
+        '401':
+          description: Unauthorized
+
+  /payments/invoices/{invoice_id}/create:
+    post:
+      summary: Create a payment for an invoice
+      description: Generates a Midtrans Snap token and redirect URL for the given invoice.
+      tags:
+        - Payments
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: invoice_id
+          required: true
+          schema:
+            type: integer
+          description: The ID of the invoice to pay
+      responses:
+        '200':
+          description: Payment token generated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Payment token generated
+                  data:
+                    type: object
+                    properties:
+                      snap_token:
+                        type: string
+                        example: a1b2c3d4-e5f6-7890
+                      redirect_url:
+                        type: string
+                        example: https://app.sandbox.midtrans.com/snap/v2/vtweb/a1b2c3d4...
+        '401':
+          description: Unauthorized
+        '404':
+          description: Invoice not found
+
+  /payments/webhook:
+    post:
+      summary: Midtrans webhook callback
+      description: Receives payment status updates from Midtrans.
+      tags:
+        - Payments
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                transaction_time:
+                  type: string
+                  example: "2024-05-15 10:11:12"
+                transaction_status:
+                  type: string
+                  example: "settlement"
+                transaction_id:
+                  type: string
+                  example: "93c6a5..."
+                status_message:
+                  type: string
+                  example: "midtrans payment notification"
+                status_code:
+                  type: string
+                  example: "200"
+                signature_key:
+                  type: string
+                  example: "xxx..."
+                payment_type:
+                  type: string
+                  example: "gopay"
+                order_id:
+                  type: string
+                  example: "INV-202405-001"
+                merchant_id:
+                  type: string
+                  example: "G123456"
+                gross_amount:
+                  type: string
+                  example: "125000.00"
+                fraud_status:
+                  type: string
+                  example: "accept"
+                currency:
+                  type: string
+                  example: "IDR"
+      responses:
+        '200':
+          description: Webhook processed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Webhook processed successfully
+
+  /admin/meter-readings/{id}/approve:
+    patch:
+      summary: Approve a meter reading
+      description: Approves a meter reading and generates an invoice. Requires admin privileges.
+      tags:
+        - Admin
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+          description: The ID of the meter reading to approve
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                notes:
+                  type: string
+                  example: "Reading looks accurate."
+      responses:
+        '200':
+          description: Meter reading approved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Meter reading approved. Invoice generated.
+                  data:
+                    type: object
+                    properties:
+                      id:
+                        type: integer
+                      status:
+                        type: string
+                        example: approved
+                      invoice:
+                        type: object
+                        properties:
+                          invoice_number:
+                            type: string
+                          total_amount:
+                            type: number
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden (Not an admin)
+        '404':
+          description: Meter reading not found
+
+  /admin/meter-readings/{id}/reject:
+    patch:
+      summary: Reject a meter reading
+      description: Rejects a meter reading with a reason. Requires admin privileges.
+      tags:
+        - Admin
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+          description: The ID of the meter reading to reject
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - rejection_reason
+              properties:
+                rejection_reason:
+                  type: string
+                  example: "Photo is too blurry, please retake."
+      responses:
+        '200':
+          description: Meter reading rejected
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Meter reading rejected.
+                  data:
+                    type: object
+                    properties:
+                      id:
+                        type: integer
+                      status:
+                        type: string
+                        example: rejected
+                      rejection_reason:
+                        type: string
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden (Not an admin)
+        '404':
+          description: Meter reading not found
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        name:
+          type: string
+          example: Budi Santoso
+        email:
+          type: string
+          format: email
+          example: budi@example.com
+        phone:
+          type: string
+          example: "081234567890"
+        address:
+          type: string
+          nullable: true
+          example: "Jl. Sudirman No. 45, Jakarta Selatan"
+        latitude:
+          type: number
+          format: float
+          nullable: true
+          example: -6.20880
+        longitude:
+          type: number
+          format: float
+          nullable: true
+          example: 106.84560
+        role:
+          type: string
+          enum: [customer, pdam_admin, super_admin]
+          example: customer
+        status:
+          type: string
+          enum: [active, inactive, suspended]
+          example: active
+        joined_at:
+          type: string
+          format: date-time
+          example: "2024-01-01T10:00:00.000000Z"
+
+    RegisterRequest:
+      type: object
+      required:
+        - name
+        - email
+        - phone
+        - password
+        - password_confirmation
+      properties:
+        name:
+          type: string
+          example: Budi Santoso
+        email:
+          type: string
+          format: email
+          example: budi@example.com
+        phone:
+          type: string
+          example: "081234567890"
+        address:
+          type: string
+          example: "Jl. Sudirman No. 45, Jakarta Selatan"
+        latitude:
+          type: number
+          format: float
+          example: -6.20880
+        longitude:
+          type: number
+          format: float
+          example: 106.84560
+        password:
+          type: string
+          format: password
+          example: password123
+        password_confirmation:
+          type: string
+          format: password
+          example: password123
+
+    LoginRequest:
+      type: object
+      required:
+        - email
+        - password
+        - device_name
+      properties:
+        email:
+          type: string
+          format: email
+          example: budi@example.com
+        password:
+          type: string
+          format: password
+          example: password123
+        device_name:
+          type: string
+          example: "iPhone 13"
+
+    AuthResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: Success
+        data:
+          type: object
+          properties:
+            user:
+              $ref: '#/components/schemas/User'
+            token:
+              type: string
+              example: "1|abcdef1234567890"
+
+    MeterReading:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 10
+        water_meter_id:
+          type: integer
+          example: 1
+        reading_value:
+          type: integer
+          example: 1205
+        status:
+          type: string
+          enum: [pending, approved, rejected]
+          example: pending
+        photo_path:
+          type: string
+          example: "meter_readings/xxx.jpg"
+        reading_date:
+          type: string
+          format: date
+          example: "2024-05-15"
+
+    Invoice:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 100
+        invoice_number:
+          type: string
+          example: "INV-202405-001"
+        billing_period:
+          type: string
+          example: "2024-05"
+        total_amount:
+          type: number
+          example: 125000
+        status:
+          type: string
+          enum: [unpaid, paid, overdue]
+          example: unpaid
+        due_date:
+          type: string
+          format: date
+          example: "2024-05-20"
